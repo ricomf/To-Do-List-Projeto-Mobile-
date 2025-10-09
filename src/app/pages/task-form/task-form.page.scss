@@ -1,0 +1,51 @@
+ion-content {
+  --background: var(--ion-color-light);
+}
+
+ion-list {
+  background: transparent;
+  padding: 16px;
+}
+
+ion-item {
+  --background: white;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  --padding-start: 16px;
+  --padding-end: 16px;
+}
+
+.error-message {
+  color: var(--ion-color-danger);
+  padding: 0 16px 8px;
+  font-size: 12px;
+
+  small {
+    display: block;
+  }
+}
+
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  width: 100%;
+
+  ion-chip {
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.8;
+    }
+  }
+}
+
+.submit-container {
+  padding: 16px;
+
+  ion-button {
+    margin: 0;
+    font-weight: 600;
+  }
+}
