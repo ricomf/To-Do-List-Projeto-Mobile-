@@ -48,6 +48,7 @@
           slot="start"
           [checked]="task.status === 'COMPLETED'"
           (ionChange)="toggleTaskStatus(task)"
+          [disabled]="false"
         ></ion-checkbox>
 
         <ion-label class="ion-text-wrap">
@@ -88,8 +89,9 @@
 
   <!-- Floating Action Button -->
   <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-    <ion-fab-button (click)="createNewTask()">
+    <ion-fab-button (click)="createNewTask()" id="add-task-btn">
       <ion-icon name="add"></ion-icon>
     </ion-fab-button>
   </ion-fab>
+
 </ion-content>

@@ -1,6 +1,8 @@
 import { Routes } from '@angular/router';
 import { TabsPage } from './tabs.page';
 
+console.log('[TabsRoutes] Loading tabs routes...');
+
 export const routes: Routes = [
   {
     path: '',

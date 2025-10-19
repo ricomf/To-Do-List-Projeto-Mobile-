@@ -1,15 +1,16 @@
 import { Routes } from '@angular/router';
-import { authGuard, noAuthGuard } from './guards/auth.guard';
+import { authGuard } from './guards/auth.guard';
+
+console.log('[Routes] Loading app routes...');
 
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: '/tabs',
+    redirectTo: '/auth/login',
     pathMatch: 'full'
   },
   {
     path: 'auth',
-    canActivate: [noAuthGuard],
     children: [
       {
         path: 'login',
@@ -43,6 +44,6 @@ export const routes: Routes = [
   },
   {
     path: '**',
-    redirectTo: '/tabs'
+    redirectTo: '/auth/login'
   }
 ];

@@ -223,3 +223,21 @@ ion-select {
     display: none !important;
   }
 }
+
+// Fix for click blocking issues
+ion-router-outlet {
+  pointer-events: none !important;
+
+  > * {
+    pointer-events: auto !important;
+  }
+}
+
+ion-app, ion-content, ion-page {
+  pointer-events: auto !important;
+}
+
+button, ion-button, ion-fab-button, a, ion-item, ion-checkbox {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}

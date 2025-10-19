@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { DatabaseService } from './database.service';
-import { ITask, TaskStatus, TaskPriority } from '../models';
+import { ITask, TaskStatus, TaskPriority, DatabaseError } from '../models';
 
 @Injectable({
   providedIn: 'root'
@@ -53,37 +53,86 @@ export class SQLiteTaskService {
 
   async createTask(task: Partial<ITask>, userId: string): Promise<ITask> {
     try {
+      console.log('[SQLiteTaskService] ========== CREATE TASK IN SQLITE START ==========');
+      console.log('[SQLiteTaskService] Input task:', JSON.stringify(task, null, 2));
+      console.log('[SQLiteTaskService] User ID:', userId);
+
+      // Validate required fields
+      if (!task.titulo || task.titulo.trim() === '') {
+        console.error('[SQLiteTaskService] ❌ Validation failed: Título vazio');
+        throw new DatabaseError('Título da tarefa é obrigatório');
+      }
+
+      if (!userId) {
+        console.error('[SQLiteTaskService] ❌ Validation failed: User ID missing');
+        throw new DatabaseError('Usuário não identificado');
+      }
+
+      console.log('[SQLiteTaskService] Validation passed, generating task ID...');
       const taskId = this.db.generateId();
+      console.log('[SQLiteTaskService] Generated task ID:', taskId);
+
       const now = this.db.dateToSQL(new Date());
+      console.log('[SQLiteTaskService] Current timestamp:', now);
 
-      await this.db.run(
-        `INSERT INTO tasks (
-          id, titulo, descricao, status, prioridade,
-          data_criacao, data_atualizacao, data_vencimento,
-          user_id, project_id, category_id, tags, anexos
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          taskId,
-          task.titulo,
-          task.descricao || null,
-          task.status || TaskStatus.TODO,
-          task.prioridade || TaskPriority.MEDIUM,
-          now,
-          now,
-          task.dataVencimento ? this.db.dateToSQL(new Date(task.dataVencimento)) : null,
-          userId,
-          task.projectId || null,
-          task.categoryId || null,
-          task.tags ? JSON.stringify(task.tags) : null,
-          task.anexos ? JSON.stringify(task.anexos) : null
-        ]
-      );
+      const sql = `INSERT INTO tasks (
+        id, titulo, descricao, status, prioridade,
+        data_criacao, data_atualizacao, data_vencimento,
+        user_id, project_id, category_id, tags, anexos,
+        is_public, assigned_to
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
+      const params = [
+        taskId,
+        task.titulo,
+        task.descricao || null,
+        task.status || TaskStatus.TODO,
+        task.prioridade || TaskPriority.MEDIUM,
+        now,
+        now,
+        task.dataVencimento ? this.db.dateToSQL(new Date(task.dataVencimento)) : null,
+        userId,
+        task.projectId || null,
+        task.categoryId || null,
+        task.tags ? JSON.stringify(task.tags) : '[]',
+        task.anexos ? JSON.stringify(task.anexos) : '[]',
+        task.isPublic ? 1 : 0,
+        task.assignedTo ? JSON.stringify(task.assignedTo) : '[]'
+      ];
+
+      console.log('[SQLiteTaskService] SQL params:', JSON.stringify(params, null, 2));
+      console.log('[SQLiteTaskService] Executing INSERT query...');
+
+      await this.db.run(sql, params);
+      console.log('[SQLiteTaskService] ✅ INSERT completed successfully');
+
+      console.log('[SQLiteTaskService] Retrieving created task...');
       const createdTask = await this.getTaskById(taskId);
-      return createdTask!;
+
+      if (!createdTask) {
+        console.error('[SQLiteTaskService] ❌ Failed to retrieve created task');
+        throw new DatabaseError('Falha ao recuperar tarefa criada');
+      }
+
+      console.log('[SQLiteTaskService] ✅ Task retrieved successfully');
+      console.log('[SQLiteTaskService] Created task:', JSON.stringify(createdTask, null, 2));
+      console.log('[SQLiteTaskService] ========== CREATE TASK IN SQLITE END ==========');
+      return createdTask;
     } catch (error) {
-      console.error('Error creating task:', error);
-      throw new Error('Erro ao criar tarefa');
+      console.error('[SQLiteTaskService] ========== CREATE TASK IN SQLITE FAILED ==========');
+      console.error('[SQLiteTaskService] ❌ Error:', error);
+      console.error('[SQLiteTaskService] Error type:', error?.constructor?.name);
+      console.error('[SQLiteTaskService] Error message:', (error as any)?.message);
+      console.error('[SQLiteTaskService] Error stack:', (error as any)?.stack);
+
+      if (error instanceof DatabaseError) {
+        throw error;
+      }
+
+      throw new DatabaseError(
+        'Erro ao criar tarefa no banco de dados',
+        error instanceof Error ? error.message : String(error)
+      );
     }
   }
 

@@ -7,7 +7,7 @@ import {
   TaskStatus,
   TaskPriority,
   UserRole
-} from '../models';
+} from '../models'; 
 
 /**
  * Mock Backend Service
@@ -28,9 +28,24 @@ export class MockBackendService {
    * Inicializa dados mock no localStorage
    */
   private initializeMockData() {
-    if (!localStorage.getItem(this.STORAGE_KEY)) {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify([]));
-    }
+    
+    // 🚨 CORREÇÃO FINAL: SEMPRE REINICIA OS USUÁRIOS NO AMBIENTE MOCK
+    const defaultUser = {
+      id: 'mock-user-123',
+      nome: 'Mock Test User',
+      email: 'test@mock.com',
+      password: 'password', // Senha de teste: "password"
+      avatarUrl: null,
+      roles: [UserRole.USER],
+      dataCriacao: new Date(),
+      dataAtualizacao: new Date(),
+      ativo: true
+    };
+    
+    // Sobrescreve a lista de usuários com APENAS o usuário padrão
+    localStorage.setItem(this.STORAGE_KEY, JSON.stringify([defaultUser]));
+    console.warn('[MockBackend] 🛑 Lista de usuários MOCK REINICIADA. Use test@mock.com / password');
+
     if (!localStorage.getItem(this.TASKS_KEY)) {
       localStorage.setItem(this.TASKS_KEY, JSON.stringify(this.getDefaultTasks()));
     }
@@ -40,16 +55,26 @@ export class MockBackendService {
    * Simula login
    */
   async login(credentials: ILogin): Promise<IAuthResponse> {
-    // Simula delay de rede
     await this.delay(500);
 
     const users = this.getUsers();
     const user = users.find(u => u.email === credentials.email);
 
-    if (!user || user.password !== credentials.password) {
-      throw new Error('Email ou senha inválidos');
+    // Garante que o usuário existe
+    if (!user) {
+      console.error(`[MockBackend] Login falhou: Usuário ${credentials.email} não encontrado.`);
+      // 🚨 Throw é o que permite ao componente exibir o erro
+      throw new Error('Email ou senha inválidos'); 
+    }
+    
+    // Garante que a senha é exatamente igual à string "password"
+    if (user.password !== credentials.password) {
+      console.error(`[MockBackend] Login falhou: Senha incorreta para ${credentials.email}.`);
+      // 🚨 Throw é o que permite ao componente exibir o erro
+      throw new Error('Email ou senha inválidos'); 
     }
 
+    console.log(`[MockBackend] ✅ Login bem-sucedido para: ${user.email}`);
     return this.createAuthResponse(user);
   }
 
@@ -57,22 +82,18 @@ export class MockBackendService {
    * Simula registro
    */
   async register(userData: IRegister): Promise<IAuthResponse> {
-    // Simula delay de rede
     await this.delay(500);
 
     const users = this.getUsers();
 
-    // Verifica se email já existe
     if (users.find(u => u.email === userData.email)) {
       throw new Error('Email já cadastrado');
     }
 
-    // Verifica se senhas coincidem
     if (userData.password !== userData.confirmPassword) {
       throw new Error('As senhas não coincidem');
     }
 
-    // Cria novo usuário
     const newUser = {
       id: this.generateId(),
       nome: userData.nome,
@@ -135,7 +156,7 @@ export class MockBackendService {
    * Gera token mock
    */
   private generateToken(): string {
-    return 'mock_token_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEyMyIsImVtYWlsIjoidGVzdEBtb2NrLmNvbSJ9.S' + Math.random().toString(36).substring(2);
   }
 
   /**
@@ -150,64 +171,10 @@ export class MockBackendService {
    */
   private getDefaultTasks(): ITask[] {
     return [
-      {
-        id: '1',
-        titulo: 'Configurar projeto Ionic',
-        descricao: 'Instalar dependências e configurar ambiente de desenvolvimento',
-        status: TaskStatus.COMPLETED,
-        dataVencimento: new Date('2025-10-10'),
-        dataCriacao: new Date('2025-10-01'),
-        dataAtualizacao: new Date('2025-10-05'),
-        prioridade: TaskPriority.HIGH,
-        userId: 'user1',
-        tags: ['setup', 'desenvolvimento'],
-        isPublic: false,
-        assignedTo: ['user1'],
-        completed: true,
-        completedAt: new Date('2025-10-05')
-      },
-      {
-        id: '2',
-        titulo: 'Implementar autenticação JWT',
-        descricao: 'Criar sistema de login com tokens JWT e refresh tokens',
-        status: TaskStatus.IN_PROGRESS,
-        dataVencimento: new Date('2025-10-15'),
-        dataCriacao: new Date('2025-10-02'),
-        dataAtualizacao: new Date('2025-10-07'),
-        prioridade: TaskPriority.URGENT,
-        userId: 'user1',
-        tags: ['backend', 'segurança'],
-        isPublic: false,
-        assignedTo: ['user1']
-      },
-      {
-        id: '3',
-        titulo: 'Design de UI/UX',
-        descricao: 'Criar mockups e protótipos para as principais telas',
-        status: TaskStatus.TODO,
-        dataVencimento: new Date('2025-10-20'),
-        dataCriacao: new Date('2025-10-03'),
-        dataAtualizacao: new Date('2025-10-03'),
-        prioridade: TaskPriority.MEDIUM,
-        userId: 'user1',
-        tags: ['design', 'ui/ux'],
-        isPublic: false,
-        assignedTo: ['user1']
-      },
-      {
-        id: '4',
-        titulo: 'Implementar tema escuro',
-        descricao: 'Adicionar suporte completo para modo escuro',
-        status: TaskStatus.TODO,
-        dataVencimento: new Date('2025-10-25'),
-        dataCriacao: new Date('2025-10-04'),
-        dataAtualizacao: new Date('2025-10-04'),
-        prioridade: TaskPriority.LOW,
-        userId: 'user1',
-        tags: ['frontend', 'ui'],
-        isPublic: false,
-        assignedTo: ['user1']
-      }
+      { id: '1', titulo: 'Configurar projeto Ionic', descricao: 'Instalar dependências e configurar ambiente de desenvolvimento', status: TaskStatus.COMPLETED, dataVencimento: new Date('2025-10-10'), dataCriacao: new Date('2025-10-01'), dataAtualizacao: new Date('2025-10-05'), prioridade: TaskPriority.HIGH, userId: 'mock-user-123', tags: ['setup', 'desenvolvimento'], isPublic: false, assignedTo: ['mock-user-123'], completed: true, completedAt: new Date('2025-10-05') },
+      { id: '2', titulo: 'Implementar autenticação JWT', descricao: 'Criar sistema de login com tokens JWT e refresh tokens', status: TaskStatus.IN_PROGRESS, dataVencimento: new Date('2025-10-15'), dataCriacao: new Date('2025-10-02'), dataAtualizacao: new Date('2025-10-07'), prioridade: TaskPriority.URGENT, userId: 'mock-user-123', tags: ['backend', 'segurança'], isPublic: false, assignedTo: ['mock-user-123'] },
+      { id: '3', titulo: 'Design de UI/UX', descricao: 'Criar mockups e protótipos para as principais telas', status: TaskStatus.TODO, dataVencimento: new Date('2025-10-20'), dataCriacao: new Date('2025-10-03'), dataAtualizacao: new Date('2025-10-03'), prioridade: TaskPriority.MEDIUM, userId: 'mock-user-123', tags: ['design', 'ui/ux'], isPublic: false, assignedTo: ['mock-user-123'] },
+      { id: '4', titulo: 'Implementar tema escuro', descricao: 'Adicionar suporte completo para modo escuro', status: TaskStatus.TODO, dataVencimento: new Date('2025-10-25'), dataCriacao: new Date('2025-10-04'), dataAtualizacao: new Date('2025-10-04'), prioridade: TaskPriority.LOW, userId: 'mock-user-123', tags: ['frontend', 'ui'], isPublic: false, assignedTo: ['mock-user-123'] }
     ];
   }
 }

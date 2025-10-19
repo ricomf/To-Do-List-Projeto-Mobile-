@@ -60,6 +60,7 @@ export class TaskFormPage implements OnInit {
   }
 
   ngOnInit() {
+    console.log('[TaskFormPage] ========== TASK FORM PAGE LOADED ==========');
     this.initForm();
     this.checkEditMode();
   }
@@ -122,7 +123,13 @@ export class TaskFormPage implements OnInit {
   }
 
   async onSubmit() {
+    console.log('[TaskFormPage] ========== ON SUBMIT CALLED ==========');
+    console.log('[TaskFormPage] Form valid:', this.taskForm.valid);
+    console.log('[TaskFormPage] Form value:', this.taskForm.value);
+
     if (this.taskForm.invalid) {
+      console.log('[TaskFormPage] ❌ Form is invalid');
+      alert('Formulário inválido! Preencha os campos obrigatórios.');
       this.taskForm.markAllAsTouched();
       return;
     }
@@ -131,6 +138,7 @@ export class TaskFormPage implements OnInit {
       const formValue = this.taskForm.value;
 
       if (this.isEditMode && this.taskId) {
+        console.log('[TaskFormPage] Updating existing task:', this.taskId);
         const updateData: IUpdateTaskDto = {
           titulo: formValue.titulo,
           descricao: formValue.descricao,
@@ -141,7 +149,9 @@ export class TaskFormPage implements OnInit {
           categoryId: formValue.categoryId
         };
         await this.taskService.updateTask(this.taskId, updateData);
+        console.log('[TaskFormPage] ✅ Task updated successfully');
       } else {
+        console.log('[TaskFormPage] Creating new task');
         const createData: ICreateTaskDto = {
           titulo: formValue.titulo,
           descricao: formValue.descricao,
@@ -151,12 +161,17 @@ export class TaskFormPage implements OnInit {
           projectId: formValue.projectId,
           categoryId: formValue.categoryId
         };
-        await this.taskService.createTask(createData);
+        console.log('[TaskFormPage] createData:', createData);
+        const result = await this.taskService.createTask(createData);
+        console.log('[TaskFormPage] ✅ Task created successfully:', result);
       }
 
+      console.log('[TaskFormPage] Navigating back...');
       this.navCtrl.back();
     } catch (error) {
-      console.error('Error saving task:', error);
+      console.error('[TaskFormPage] ❌ Error saving task:', error);
+      console.error('[TaskFormPage] Error details:', JSON.stringify(error));
+      alert('Erro ao salvar tarefa: ' + (error as any)?.message || 'Erro desconhecido');
     }
   }
 

@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { DatabaseService } from './database.service';
 import { IUser, ILogin, IRegister, IAuthResponse, UserRole } from '../models';
-import * as bcrypt from 'bcryptjs';
 
 @Injectable({
   providedIn: 'root'
@@ -9,7 +8,28 @@ import * as bcrypt from 'bcryptjs';
 export class SQLiteAuthService {
   constructor(private db: DatabaseService) {}
 
+  /**
+   * Hash password using Web Crypto API (browser compatible)
+   */
+  private async hashPassword(password: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Verify password against hash
+   */
+  private async verifyPassword(password: string, hash: string): Promise<boolean> {
+    const passwordHash = await this.hashPassword(password);
+    return passwordHash === hash;
+  }
+
+  // O método register() permanece inalterado e é o único que cria usuários.
   async register(userData: IRegister): Promise<IAuthResponse> {
+    // ... (Seu código de register continua aqui, está correto)
     try {
       // Check if user already exists
       const existingUser = await this.db.query(
@@ -22,7 +42,7 @@ export class SQLiteAuthService {
       }
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const hashedPassword = await this.hashPassword(userData.password);
 
       // Generate user ID
       const userId = this.db.generateId();
@@ -57,8 +77,18 @@ export class SQLiteAuthService {
       // Fetch created user
       const user = await this.getUserById(userId);
 
+      if (!user) {
+        throw new Error('Erro ao criar usuário');
+      }
+
       return {
-        user: user!,
+        user: {
+          id: user.id,
+          nome: user.nome,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+          roles: user.roles as any
+        },
         token,
         refreshToken,
         expiresIn: 86400
@@ -68,53 +98,79 @@ export class SQLiteAuthService {
     }
   }
 
+
   async login(credentials: ILogin): Promise<IAuthResponse> {
     try {
-      // Find user by email
+      console.log('[SQLiteAuth] Login attempt for:', credentials.email);
+
+      // 1. Find user by email
       const result = await this.db.query(
         'SELECT * FROM users WHERE email = ?',
         [credentials.email]
       );
 
+      console.log('[SQLiteAuth] Query result:', result);
+
+      // 🚨 CORREÇÃO CRÍTICA: Se o usuário não for encontrado, LANCE UM ERRO.
       if (!result.values || result.values.length === 0) {
+        console.error('[SQLiteAuth] ❌ Usuário não encontrado. Negando login.');
         throw new Error('Email ou senha inválidos');
       }
 
       const userData = result.values[0];
+      console.log('[SQLiteAuth] User found:', userData.email);
 
-      // Verify password
-      const isPasswordValid = await bcrypt.compare(credentials.password, userData.password);
+      // 2. Verify password
+      const isPasswordValid = await this.verifyPassword(credentials.password, userData.password);
 
       if (!isPasswordValid) {
+        console.error('[SQLiteAuth] ❌ Senha inválida.');
         throw new Error('Email ou senha inválidos');
       }
 
-      // Generate new tokens
+      console.log('[SQLiteAuth] Password verified');
+
+      // 3. Generate and store new tokens
       const token = this.generateToken();
       const refreshToken = this.generateToken();
       const expiresAt = this.db.dateToSQL(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
-      // Update or insert tokens
       await this.db.run(
         `INSERT OR REPLACE INTO auth_tokens (user_id, token, refresh_token, expires_at)
          VALUES (?, ?, ?, ?)`,
         [userData.id, token, refreshToken, expiresAt]
       );
 
-      // Get user with preferences
+      // 4. Get user with preferences
       const user = await this.getUserById(userData.id);
 
+      if (!user) {
+        throw new Error('Erro ao buscar dados do usuário');
+      }
+
+      console.log('[SQLiteAuth] Login successful, returning response');
+
       return {
-        user: user!,
+        user: {
+          id: user.id,
+          nome: user.nome,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+          roles: user.roles as any
+        },
         token,
         refreshToken,
         expiresIn: 86400
       };
     } catch (error: any) {
-      throw new Error(error.message || 'Erro ao fazer login');
+      // Re-lança a mensagem de erro específica para o componente de login
+      throw new Error(error.message || 'Erro ao fazer login'); 
     }
   }
 
+  // ... (O restante dos seus métodos: logout, refreshToken, validateToken, getUserById, generateToken permanecem inalterados)
+  // ...
+  
   async logout(userId: string): Promise<void> {
     await this.db.run('DELETE FROM auth_tokens WHERE user_id = ?', [userId]);
   }
@@ -153,8 +209,18 @@ export class SQLiteAuthService {
       // Get user
       const user = await this.getUserById(tokenData.user_id);
 
+      if (!user) {
+        return null;
+      }
+
       return {
-        user: user!,
+        user: {
+          id: user.id,
+          nome: user.nome,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+          roles: user.roles as any
+        },
         token: newToken,
         refreshToken: newRefreshToken,
         expiresIn: 86400
@@ -247,8 +313,20 @@ export class SQLiteAuthService {
   }
 
   private generateToken(): string {
-    return Array.from({ length: 64 }, () =>
+    // Generate a simple JWT-like token for browser compatibility
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const payload = {
+      sub: this.db.generateId(),
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+    };
+
+    const base64Header = btoa(JSON.stringify(header)).replace(/=/g, '');
+    const base64Payload = btoa(JSON.stringify(payload)).replace(/=/g, '');
+    const signature = Array.from({ length: 43 }, () =>
       Math.floor(Math.random() * 16).toString(16)
     ).join('');
+
+    return `${base64Header}.${base64Payload}.${signature}`;
   }
 }

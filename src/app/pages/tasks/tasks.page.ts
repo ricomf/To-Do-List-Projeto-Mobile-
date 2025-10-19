@@ -38,11 +38,23 @@ export class TasksPage implements OnInit {
     private taskService: TaskService,
     private router: Router
   ) {
+    console.log('[TasksPage] Constructor called');
     addIcons({ add, search, filter, checkmark, trash, create });
   }
 
   ngOnInit() {
+    console.log('[TasksPage] ngOnInit called');
     this.loadTasks();
+    this.subscribeToTaskUpdates();
+  }
+
+  subscribeToTaskUpdates() {
+    // Subscribe to task updates for real-time updates
+    this.taskService.tasks$.subscribe(tasks => {
+      console.log('[TasksPage] Tasks updated via subscription:', tasks.length);
+      this.tasks = tasks;
+      this.applyFilters();
+    });
   }
 
   async loadTasks() {
@@ -98,21 +110,24 @@ export class TasksPage implements OnInit {
 
   async toggleTaskStatus(task: ITask) {
     try {
+      console.log('[TasksPage] Toggling task status:', task.id, 'current status:', task.status);
       const newStatus = task.status === TaskStatus.COMPLETED
         ? TaskStatus.TODO
         : TaskStatus.COMPLETED;
 
+      console.log('[TasksPage] New status will be:', newStatus);
       await this.taskService.updateTask(task.id, { status: newStatus });
-      await this.loadTasks();
+      console.log('[TasksPage] Task updated - UI will update automatically via subscription');
+      // No need to reload - subscription will update automatically
     } catch (error) {
-      console.error('Error updating task:', error);
+      console.error('[TasksPage] Error updating task:', error);
     }
   }
 
   async deleteTask(task: ITask) {
     try {
       await this.taskService.deleteTask(task.id);
-      await this.loadTasks();
+      // No need to reload - subscription will update automatically
     } catch (error) {
       console.error('Error deleting task:', error);
     }

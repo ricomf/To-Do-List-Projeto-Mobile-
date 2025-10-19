@@ -11,37 +11,88 @@ import { ITask, ICreateTaskDto, IUpdateTaskDto, TaskStatus } from '../models';
 export class TaskService {
   private tasksSubject = new BehaviorSubject<ITask[]>([]);
   public tasks$ = this.tasksSubject.asObservable();
-  private useSQLite = true;
+  private useSQLite = false; // Will be set after DB initialization
+  private useMockBackend = true; // Fallback to mock
 
   constructor(
     private apiService: ApiService,
     private sqliteTask: SQLiteTaskService,
     private authService: AuthService
-  ) {}
+  ) {
+    console.log('[TaskService] Initialized');
+    this.initializeTaskService();
+  }
+
+  /**
+   * Initialize task service and check SQLite availability
+   */
+  private async initializeTaskService(): Promise<void> {
+    try {
+      console.log('[TaskService] Waiting for database initialization...');
+      await this.authService.waitForInit();
+      console.log('[TaskService] Database initialization complete');
+
+      // Assume SQLite está disponível após a inicialização
+      this.useSQLite = true;
+      this.useMockBackend = false;
+      console.log('[TaskService] ✅ SQLite initialized, will use SQLite for tasks');
+    } catch (error) {
+      console.error('[TaskService] ❌ SQLite initialization failed, using mock backend:', error);
+      this.useSQLite = false;
+      this.useMockBackend = true;
+    }
+  }
+
+  /**
+   * Wait for initialization before operations
+   */
+  private async ensureInitialized(): Promise<void> {
+    // Wait for auth service initialization
+    await this.authService.waitForInit();
+  }
 
   /**
    * Get all tasks for current user
    */
   async getTasks(): Promise<ITask[]> {
     try {
+      console.log('[TaskService] getTasks() called');
+
+      // CRITICAL: Wait for initialization
+      await this.ensureInitialized();
+
       const userId = this.authService.currentUserValue?.id;
+      console.log('[TaskService] User ID:', userId);
 
       if (!userId) {
+        console.log('[TaskService] ⚠️ No userId, returning empty tasks');
         return [];
       }
+
+      console.log('[TaskService] useSQLite:', this.useSQLite, 'useMockBackend:', this.useMockBackend);
 
       let tasks: ITask[];
 
       if (this.useSQLite) {
+        console.log('[TaskService] Fetching tasks from SQLite...');
         tasks = await this.sqliteTask.getTasks(userId);
+        console.log('[TaskService] ✅ Got', tasks.length, 'tasks from SQLite');
+      } else if (this.useMockBackend) {
+        console.log('[TaskService] Fetching tasks from Mock Backend...');
+        tasks = this.tasksSubject.value; // Return current tasks from memory
+        console.log('[TaskService] ✅ Got', tasks.length, 'tasks from Mock');
       } else {
+        console.log('[TaskService] Fetching tasks from API...');
         tasks = await lastValueFrom(this.apiService.get<ITask[]>('tasks'));
+        console.log('[TaskService] ✅ Got', tasks.length, 'tasks from API');
       }
 
       this.tasksSubject.next(tasks);
+      console.log('[TaskService] Tasks updated in subject. Total:', tasks.length);
       return tasks;
     } catch (error) {
-      console.error('Error fetching tasks:', error);
+      console.error('[TaskService] ❌ Error fetching tasks:', error);
+      console.error('[TaskService] Error details:', JSON.stringify(error));
       return [];
     }
   }
@@ -69,30 +120,92 @@ export class TaskService {
    */
   async createTask(taskData: ICreateTaskDto): Promise<ITask> {
     try {
+      console.log('[TaskService] ========== CREATE TASK START ==========');
+      console.log('[TaskService] taskData:', JSON.stringify(taskData, null, 2));
+
+      // CRITICAL: Ensure database is initialized
+      console.log('[TaskService] Ensuring initialization...');
+      await this.ensureInitialized();
+      console.log('[TaskService] Initialization complete');
+
+      console.log('[TaskService] Current state:');
+      console.log('[TaskService] - useSQLite:', this.useSQLite);
+      console.log('[TaskService] - useMockBackend:', this.useMockBackend);
+
       const userId = this.authService.currentUserValue?.id;
+      console.log('[TaskService] - userId:', userId);
+
       if (!userId) {
+        console.error('[TaskService] ❌ ERROR: Usuário não autenticado');
         throw new Error('Usuário não autenticado');
       }
 
       let newTask: ITask;
 
       if (this.useSQLite) {
-        newTask = await this.sqliteTask.createTask(taskData, userId);
+        console.log('[TaskService] ➡️  Creating task in SQLite...');
+        try {
+          newTask = await this.sqliteTask.createTask(taskData, userId);
+          console.log('[TaskService] ✅ Task created in SQLite successfully!');
+          console.log('[TaskService] Task ID:', newTask.id);
+        } catch (sqliteError) {
+          console.error('[TaskService] ❌ SQLite creation failed:', sqliteError);
+          console.log('[TaskService] Falling back to Mock Backend...');
+          this.useSQLite = false;
+          this.useMockBackend = true;
+          newTask = this.createMockTask(taskData, userId);
+        }
+      } else if (this.useMockBackend) {
+        console.log('[TaskService] ➡️  Creating task in Mock Backend...');
+        newTask = this.createMockTask(taskData, userId);
+        console.log('[TaskService] ✅ Task created in Mock successfully!');
+        console.log('[TaskService] Task ID:', newTask.id);
       } else {
+        console.log('[TaskService] ➡️  Creating task via Real API...');
         newTask = await lastValueFrom(
           this.apiService.post<ITask>('tasks', taskData)
         );
+        console.log('[TaskService] ✅ Task created via API successfully!');
+        console.log('[TaskService] Task ID:', newTask.id);
       }
 
       // Update local tasks list
       const currentTasks = this.tasksSubject.value;
-      this.tasksSubject.next([...currentTasks, newTask]);
+      const updatedTasks = [...currentTasks, newTask];
+      this.tasksSubject.next(updatedTasks);
+      console.log('[TaskService] Task list updated. Total tasks:', updatedTasks.length);
+      console.log('[TaskService] ========== CREATE TASK END ==========');
 
       return newTask;
     } catch (error) {
-      console.error('Error creating task:', error);
+      console.error('[TaskService] ========== CREATE TASK FAILED ==========');
+      console.error('[TaskService] ❌ Error:', error);
+      console.error('[TaskService] Error message:', (error as any)?.message);
+      console.error('[TaskService] Error stack:', (error as any)?.stack);
       throw error;
     }
+  }
+
+  /**
+   * Create a mock task (fallback when SQLite fails)
+   */
+  private createMockTask(taskData: ICreateTaskDto, userId: string): ITask {
+    const now = new Date();
+    return {
+      id: 'mock-task-' + Date.now(),
+      titulo: taskData.titulo,
+      descricao: taskData.descricao || '',
+      status: TaskStatus.TODO,
+      prioridade: taskData.prioridade || 'medium' as any,
+      dataCriacao: now,
+      dataAtualizacao: now,
+      dataVencimento: taskData.dataVencimento,
+      userId: userId,
+      tags: taskData.tags || [],
+      isPublic: false,
+      assignedTo: [],
+      anexos: []
+    };
   }
 
   /**
@@ -100,6 +213,7 @@ export class TaskService {
    */
   async updateTask(id: string, updates: IUpdateTaskDto): Promise<ITask> {
     try {
+      console.log('[TaskService] Updating task:', id, updates);
       let updatedTask: ITask;
 
       if (this.useSQLite) {
@@ -118,9 +232,10 @@ export class TaskService {
         this.tasksSubject.next([...currentTasks]);
       }
 
+      console.log('[TaskService] Task updated:', updatedTask);
       return updatedTask;
     } catch (error) {
-      console.error('Error updating task:', error);
+      console.error('[TaskService] Error updating task:', error);
       throw error;
     }
   }
@@ -130,6 +245,8 @@ export class TaskService {
    */
   async deleteTask(id: string): Promise<void> {
     try {
+      console.log('[TaskService] Deleting task:', id);
+
       if (this.useSQLite) {
         await this.sqliteTask.deleteTask(id);
       } else {
@@ -142,7 +259,7 @@ export class TaskService {
       const currentTasks = this.tasksSubject.value;
       this.tasksSubject.next(currentTasks.filter(t => t.id !== id));
     } catch (error) {
-      console.error('Error deleting task:', error);
+      console.error('[TaskService] Error deleting task:', error);
       throw error;
     }
   }
@@ -180,55 +297,4 @@ export class TaskService {
     );
   }
 
-  /**
-   * Get mock tasks for development
-   */
-  private getMockTasks(): ITask[] {
-    return [
-      {
-        id: '1',
-        titulo: 'Implementar autenticação JWT',
-        descricao: 'Criar sistema de autenticação com JWT e refresh tokens',
-        status: TaskStatus.IN_PROGRESS,
-        dataVencimento: new Date('2025-10-15'),
-        dataCriacao: new Date(),
-        dataAtualizacao: new Date(),
-        prioridade: 'HIGH' as any,
-        userId: 'user1',
-        tags: ['backend', 'segurança'],
-        isPublic: false,
-        assignedTo: ['user1']
-      },
-      {
-        id: '2',
-        titulo: 'Design da interface de usuário',
-        descricao: 'Criar mockups para as principais telas',
-        status: TaskStatus.TODO,
-        dataVencimento: new Date('2025-10-20'),
-        dataCriacao: new Date(),
-        dataAtualizacao: new Date(),
-        prioridade: 'MEDIUM' as any,
-        userId: 'user1',
-        tags: ['design', 'ui/ux'],
-        isPublic: false,
-        assignedTo: ['user1']
-      },
-      {
-        id: '3',
-        titulo: 'Configurar CI/CD',
-        descricao: 'Implementar pipeline de integração e deploy contínuo',
-        status: TaskStatus.COMPLETED,
-        dataVencimento: new Date('2025-10-10'),
-        dataCriacao: new Date(),
-        dataAtualizacao: new Date(),
-        prioridade: 'LOW' as any,
-        userId: 'user1',
-        tags: ['devops', 'automação'],
-        isPublic: false,
-        assignedTo: ['user1'],
-        completed: true,
-        completedAt: new Date()
-      }
-    ];
-  }
 }

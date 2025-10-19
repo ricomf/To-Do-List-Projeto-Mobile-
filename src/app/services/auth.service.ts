@@ -11,8 +11,9 @@ import { environment } from '../../environments/environment';
   providedIn: 'root'
 })
 export class AuthService {
-  private useSQLite = true; // Use SQLite by default
-  private useMockBackend = false; // Fallback to mock if needed
+  // Configurações iniciais (ajustáveis com base no ambiente ou inicialização)
+  private useSQLite = false; 
+  private useMockBackend = true; 
   private readonly TOKEN_KEY = 'auth_token';
   private readonly REFRESH_TOKEN_KEY = 'refresh_token';
   private readonly USER_KEY = 'user_data';
@@ -23,24 +24,39 @@ export class AuthService {
   private isAuthenticatedSubject = new BehaviorSubject<boolean>(this.hasValidToken());
   public isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
 
+  private initPromise: Promise<void> | null = null;
+
   constructor(
     private apiService: ApiService,
     private mockBackend: MockBackendService,
     private sqliteAuth: SQLiteAuthService,
     private database: DatabaseService
   ) {
-    this.initializeDatabase();
+    this.initPromise = this.initializeDatabase();
     this.checkTokenExpiration();
   }
 
   private async initializeDatabase(): Promise<void> {
     try {
+      console.log('[AuthService] Initializing database...');
       await this.database.initialize();
-      console.log('SQLite database initialized');
+      console.log('[AuthService] ✅ SQLite database initialized successfully');
+      this.useSQLite = true;
+      this.useMockBackend = false; // Desativa o mock se o SQLite funcionar
     } catch (error) {
-      console.error('Failed to initialize SQLite, falling back to mock backend:', error);
+      console.error('[AuthService] ❌ Failed to initialize SQLite, falling back to mock backend:', error);
       this.useSQLite = false;
-      this.useMockBackend = true;
+      // Mantém o mock ativado para fallback (ex: rodando no browser sem plugin)
+      this.useMockBackend = true; 
+    }
+  }
+
+  /**
+   * Wait for database initialization
+   */
+  async waitForInit(): Promise<void> {
+    if (this.initPromise) {
+      await this.initPromise;
     }
   }
 
@@ -52,7 +68,7 @@ export class AuthService {
   }
 
   /**
-   * Check if user is authenticated
+   * Check if user is authenticated (SÍNCRONO - APENAS TOKEN)
    */
   get isAuthenticated(): boolean {
     return this.isAuthenticatedSubject.value;
@@ -63,24 +79,42 @@ export class AuthService {
    */
   async login(credentials: ILogin): Promise<IAuthResponse> {
     try {
+      console.log('[AuthService] Login attempt START');
+      console.log('[AuthService] - useSQLite:', this.useSQLite);
+      console.log('[AuthService] - useMockBackend:', this.useMockBackend);
+      console.log('[AuthService] - credentials:', { email: credentials.email, passwordLength: credentials.password?.length });
+
       let response: IAuthResponse;
 
       if (this.useSQLite) {
-        // Use SQLite
+        console.log('[AuthService] Using SQLite authentication...');
+        await this.waitForInit();
         response = await this.sqliteAuth.login(credentials);
+        console.log('[AuthService] SQLite login response:', { success: !!response.token, userId: response.user?.id });
       } else if (this.useMockBackend) {
-        // Use mock backend
+        console.log('[AuthService] Using Mock Backend authentication...');
+        // O Mock agora verifica credenciais antes de retornar sucesso
         response = await this.mockBackend.login(credentials);
+        console.log('[AuthService] Mock login response:', { success: !!response.token, userId: response.user?.id });
       } else {
-        // Use real API
+        console.log('[AuthService] Using Real API authentication...');
+        // API real
         response = await lastValueFrom(
           this.apiService.post<IAuthResponse>('auth/login', credentials)
         );
+        console.log('[AuthService] API login response:', { success: !!response.token, userId: response.user?.id });
       }
 
+      console.log('[AuthService] Setting session...');
       this.setSession(response);
+      console.log('[AuthService] Session set successfully');
+      console.log('[AuthService] isAuthenticated:', this.isAuthenticated);
+
       return response;
     } catch (error) {
+      console.error('[AuthService] Login error:', error);
+      console.error('[AuthService] Error details:', JSON.stringify(error));
+      // Re-lança o erro para que o componente de login possa exibi-lo
       throw error;
     }
   }
@@ -93,13 +127,10 @@ export class AuthService {
       let response: IAuthResponse;
 
       if (this.useSQLite) {
-        // Use SQLite
         response = await this.sqliteAuth.register(userData);
       } else if (this.useMockBackend) {
-        // Use mock backend
         response = await this.mockBackend.register(userData);
       } else {
-        // Use real API
         response = await lastValueFrom(
           this.apiService.post<IAuthResponse>('auth/register', userData)
         );
@@ -122,7 +153,6 @@ export class AuthService {
       if (this.useSQLite && userId) {
         await this.sqliteAuth.logout(userId);
       } else if (!this.useMockBackend) {
-        // Call API to invalidate token on server
         await lastValueFrom(this.apiService.post('auth/logout', {}));
       }
     } catch (error) {
@@ -133,7 +163,7 @@ export class AuthService {
   }
 
   /**
-   * Refresh access token
+   * Refresh access token (Lógica simplificada)
    */
   async refreshToken(): Promise<IAuthResponse | null> {
     const refreshToken = this.getRefreshToken();
@@ -152,7 +182,7 @@ export class AuthService {
           this.apiService.post<IAuthResponse>('auth/refresh', { refreshToken })
         );
       } else {
-        // Mock backend doesn't support refresh
+        // Mock backend não suporta refresh
         this.clearSession();
         return null;
       }
@@ -183,6 +213,90 @@ export class AuthService {
   getRefreshToken(): string | null {
     return localStorage.getItem(this.REFRESH_TOKEN_KEY);
   }
+
+  // ============== MÉTODOS DE VERIFICAÇÃO ASYNCRONA PARA O GUARD ================
+
+  private getCurrentUserId(): string | null {
+    const userData = localStorage.getItem(this.USER_KEY);
+    if (userData) {
+      try {
+        const user = JSON.parse(userData) as IUser;
+        return user.id || null; 
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Verifica se o usuário tem um token válido E se o seu registro existe no banco de dados local.
+   */
+  async isAuthenticatedAndExists(): Promise<boolean> {
+    const token = this.getToken();
+    const userId = this.getCurrentUserId();
+
+    console.log('[AuthService:Check] Starting authentication check...');
+    console.log('[AuthService:Check] - Token exists:', !!token);
+    console.log('[AuthService:Check] - User ID:', userId);
+    console.log('[AuthService:Check] - isAuthenticated:', this.isAuthenticated);
+    console.log('[AuthService:Check] - useSQLite:', this.useSQLite);
+    console.log('[AuthService:Check] - useMockBackend:', this.useMockBackend);
+
+    // 1. Verificação básica (Token e ID local)
+    if (!this.isAuthenticated || !token || !userId) {
+      console.log('[AuthService:Check] ❌ Falha: Token ou ID do usuário ausente/inválido.');
+      return false;
+    }
+
+    // 2. Se estiver usando Mock Backend (com ou sem SQLite), permitir acesso
+    // Isso permite que o app funcione no Android mesmo se o SQLite falhar
+    if (this.useMockBackend) {
+        console.log('[AuthService:Check] ✅ Usando Mock Backend. Token válido encontrado. Acesso permitido.');
+        return true;
+    }
+
+    // 3. Se estiver a usar a API real (nem Mock nem SQLite)
+    if (!this.useSQLite && !this.useMockBackend) {
+        console.log('[AuthService:Check] ✅ Usando API Real. Confiando na validade do token.');
+        return true;
+    }
+
+    // 4. Verificação no SQLite (se useSQLite for true)
+    console.log('[AuthService:Check] Verificando no banco de dados SQLite...');
+    await this.waitForInit();
+
+    try {
+      const result = await this.database.query(
+        "SELECT id FROM users WHERE id = ?;",
+        [userId]
+      );
+
+      const exists = result.values && result.values.length > 0;
+
+      if (!exists) {
+        console.log(`[AuthService:Check] ❌ Utilizador ID ${userId} não encontrado no banco de dados local.`);
+        this.clearSession();
+      } else {
+        console.log(`[AuthService:Check] ✅ Utilizador ID ${userId} encontrado localmente.`);
+      }
+
+      return exists;
+
+    } catch (error) {
+      console.error('[AuthService:Check] ❌ Erro ao verificar utilizador no DB local:', error);
+      // Em caso de erro no SQLite, se estamos usando Mock Backend, permitir acesso
+      if (this.useMockBackend) {
+        console.log('[AuthService:Check] ⚠️ Erro no SQLite mas Mock está ativo. Permitindo acesso.');
+        return true;
+      }
+      console.log('[AuthService:Check] ❌ Acesso negado devido a erro no SQLite.');
+      this.clearSession();
+      return false;
+    }
+  }
+
+  // ============== FIM DOS MÉTODOS ASYNCRONOS ================
 
   /**
    * Set user session
@@ -221,22 +335,46 @@ export class AuthService {
    */
   private hasValidToken(): boolean {
     const token = this.getToken();
-    if (!token) return false;
+    if (!token) {
+      return false;
+    }
+
+    // 🚨 CORREÇÃO DE SINTAXE E LÓGICA REFORÇADA:
+    if (this.useSQLite) {
+      if (!token.includes('.') || token.split('.').length !== 3) { 
+        this.clearSession();
+        return false;
+      }
+    }
+
+    if (this.useMockBackend) {
+      return true; // Se o Mock está ativo, confiamos na existência do token.
+    }
 
     try {
       const payload = this.decodeToken(token);
       const isExpired = Date.now() >= payload.exp * 1000;
       return !isExpired;
-    } catch {
+    } catch (error) {
+      this.clearSession();
       return false;
     }
   }
 
   /**
-   * Decode JWT token
+   * Decode JWT token (função de suporte)
    */
   private decodeToken(token: string): ITokenPayload {
-    const base64Url = token.split('.')[1];
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      throw new Error('Invalid token format');
+    }
+
+    const base64Url = parts[1];
+    if (!base64Url) {
+      throw new Error('Invalid token payload');
+    }
+
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = decodeURIComponent(
       atob(base64)
@@ -255,6 +393,6 @@ export class AuthService {
       if (!this.hasValidToken() && this.isAuthenticated) {
         this.refreshToken().catch(() => this.clearSession());
       }
-    }, 60000); // Check every minute
+    }, 60000); 
   }
 }

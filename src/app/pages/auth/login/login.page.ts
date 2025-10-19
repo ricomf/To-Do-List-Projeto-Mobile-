@@ -64,11 +64,23 @@ export class LoginPage implements OnInit {
     const loginData: ILogin = this.loginForm.value;
 
     try {
-      await this.authService.login(loginData);
-      this.router.navigate(['/tabs']);
+      console.log('[LoginPage] Starting login...', loginData.email);
+      const response = await this.authService.login(loginData);
+      console.log('[LoginPage] ✅ Login successful!', response);
+      console.log('[LoginPage] Auth status - isAuthenticated:', this.authService.isAuthenticated);
+      console.log('[LoginPage] Token stored:', !!localStorage.getItem('auth_token'));
+
+      // Small delay to ensure state is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log('[LoginPage] Navigating to /tabs...');
+      await this.router.navigate(['/tabs'], { replaceUrl: true });
+      console.log('[LoginPage] Navigation completed');
+
+      this.isLoading = false;
     } catch (error: any) {
+      console.error('[LoginPage] ❌ Login error:', error);
       this.errorMessage = error?.message || 'Erro ao fazer login. Tente novamente.';
-    } finally {
       this.isLoading = false;
     }
   }
