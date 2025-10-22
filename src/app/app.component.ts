@@ -1,10 +1,11 @@
 // src/app/app.component.ts (Conteúdo COMPLETO)
 
 import { Component, OnInit, CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
-import { CommonModule } from '@angular/common'; 
-import { RouterModule } from '@angular/router'; 
-import { IonApp, IonRouterOutlet } from '@ionic/angular/standalone'; 
+import { CommonModule } from '@angular/common';
+import { RouterModule } from '@angular/router';
+import { IonApp, IonRouterOutlet } from '@ionic/angular/standalone';
 import { DatabaseService } from './services/database.service';
+import { PreferencesService } from './services/preferences.service';
 import { Capacitor } from '@capacitor/core'; // Importação crucial
 
 @Component({
@@ -19,30 +20,58 @@ export class AppComponent implements OnInit {
   public isWebstoreReady: boolean = false; 
 
   // ✅ CORREÇÃO: As funções de debug são definidas aqui, garantindo que existam.
-  constructor(private database: DatabaseService) {
+  constructor(
+    private database: DatabaseService,
+    private preferencesService: PreferencesService
+  ) {
     console.log('[AppComponent] Initializing...');
 
     // ⬇️ FUNÇÕES DE DEBUG AGORA NO CONSTRUCTOR ⬇️
     (window as any).db = this.database;
     (window as any).debugDatabase = async () => {
       console.log('Starting database debug...');
-      // O método do serviço fará a inicialização se ainda não tiver sido feita.
-      await this.database.debugDatabase(); 
+      await this.database.debugDatabase();
     };
     (window as any).exportDatabase = async () => {
-      console.log('Exporting database...');
+      console.log('Exporting database as JSON...');
       await this.database.downloadDatabaseAsJson();
+    };
+    (window as any).downloadSQLite = async () => {
+      console.log('Downloading database as SQLite file...');
+      await this.database.downloadDatabaseAsSQLite();
     };
     (window as any).getDatabasePath = async () => {
       const path = await this.database.getDatabasePath();
       console.log('Database path:', path);
       return path;
     };
+    (window as any).checkBackup = async () => {
+      await this.database.checkBackupInfo();
+    };
+    (window as any).restoreBackup = async () => {
+      console.log('Restoring database from localStorage backup...');
+      const result = await this.database.restoreFromLocalStorage();
+      if (result) {
+        console.log('✅ Database restored successfully!');
+      } else {
+        console.log('❌ No backup found or restore failed');
+      }
+      return result;
+    };
+    (window as any).forceSave = async () => {
+      console.log('Forcing database save...');
+      await this.database.forceSave();
+      console.log('✅ Database saved!');
+    };
 
     console.log('[AppComponent] 🔧 Debug functions available:');
     console.log('  - await window.debugDatabase() - Show all database info');
     console.log('  - await window.exportDatabase() - Download database as JSON');
+    console.log('  - await window.downloadSQLite() - Download database as SQLite file');
     console.log('  - await window.getDatabasePath() - Get database file path');
+    console.log('  - await window.checkBackup() - Check backup information');
+    console.log('  - await window.restoreBackup() - Restore from localStorage backup');
+    console.log('  - await window.forceSave() - Force save database');
     console.log('  - window.db - Direct access to DatabaseService');
     // ⬆️ FUNÇÕES DE DEBUG AGORA NO CONSTRUCTOR ⬆️
 
@@ -57,36 +86,26 @@ export class AppComponent implements OnInit {
   }
 
   async ngOnInit() {
-    // Lógica de Polling para o WebStore
-    if (Capacitor.getPlatform() === 'web') { 
-      console.log('[AppComponent] Waiting for SQLite WebStore initialization...');
-      
-      let attempts = 0;
-      while (!(window as any).isSQLiteInitialized && attempts < 40) {
-        await new Promise(resolve => setTimeout(resolve, 50)); 
-        attempts++;
-      }
+    const platform = Capacitor.getPlatform();
+    console.log('[AppComponent] ngOnInit - Platform:', platform);
 
-      if ((window as any).isSQLiteInitialized) {
-        this.isWebstoreReady = true;
-        console.log(`[AppComponent] WebStore ready after ${attempts * 50}ms.`);
-      } else {
-        console.error('[AppComponent] ❌ Timeout waiting for WebStore initialization!');
+    // Initialize preferences service and theme listener
+    this.preferencesService.initializeThemeListener();
+    console.log('[AppComponent] ✅ Preferences service initialized');
+
+    // SQLite apenas para plataformas nativas (Android/iOS)
+    // No navegador, usa Mock Backend com localStorage
+    if (platform !== 'web') {
+      try {
+        console.log('[AppComponent] Native platform - Initializing SQLite database...');
+        await this.database.initialize();
+        console.log('[AppComponent] ✅ SQLite database initialized successfully');
+      } catch (error) {
+        console.error('[AppComponent] ❌ Failed to initialize SQLite database:', error);
       }
     } else {
-      this.isWebstoreReady = true;
-    }
-
-    try {
-      console.log('[AppComponent] Initializing database...');
-      // AQUI CONTINUA SÓ A CHAMADA DE INICIALIZAÇÃO.
-      await this.database.initialize(); 
-      console.log('[AppComponent] ✅ Database initialized successfully');
-      
-    } catch (error) {
-      // Se houver erro, a função de debug ainda existe, mas a inicialização falhou.
-      console.error('[AppComponent] ❌ Failed to initialize database:', error);
-      throw error;
+      console.log('[AppComponent] Web platform - Using Mock Backend with localStorage');
+      console.log('[AppComponent] Data will persist in localStorage');
     }
   }
 }

@@ -37,17 +37,26 @@ export class AuthService {
   }
 
   private async initializeDatabase(): Promise<void> {
-    try {
-      console.log('[AuthService] Initializing database...');
-      await this.database.initialize();
-      console.log('[AuthService] ✅ SQLite database initialized successfully');
-      this.useSQLite = true;
-      this.useMockBackend = false; // Desativa o mock se o SQLite funcionar
-    } catch (error) {
-      console.error('[AuthService] ❌ Failed to initialize SQLite, falling back to mock backend:', error);
+    const platform = (window as any).Capacitor?.getPlatform() || 'web';
+
+    // Apenas tenta inicializar SQLite em plataformas nativas
+    if (platform !== 'web') {
+      try {
+        console.log('[AuthService] Native platform - Initializing SQLite database...');
+        await this.database.initialize();
+        console.log('[AuthService] ✅ SQLite database initialized successfully');
+        this.useSQLite = true;
+        this.useMockBackend = false;
+      } catch (error) {
+        console.error('[AuthService] ❌ Failed to initialize SQLite on native platform:', error);
+        this.useSQLite = false;
+        this.useMockBackend = true;
+      }
+    } else {
+      // No navegador, usa apenas Mock Backend
+      console.log('[AuthService] Web platform - Using Mock Backend');
       this.useSQLite = false;
-      // Mantém o mock ativado para fallback (ex: rodando no browser sem plugin)
-      this.useMockBackend = true; 
+      this.useMockBackend = true;
     }
   }
 

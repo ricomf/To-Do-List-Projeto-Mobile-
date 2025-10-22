@@ -1,7 +1,5 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable, lastValueFrom } from 'rxjs';
-import { ApiService } from './api.service';
-import { SQLiteTaskService } from './sqlite-task.service';
+import { BehaviorSubject } from 'rxjs';
 import { AuthService } from './auth.service';
 import { ITask, ICreateTaskDto, IUpdateTaskDto, TaskStatus } from '../models';
 
@@ -11,35 +9,47 @@ import { ITask, ICreateTaskDto, IUpdateTaskDto, TaskStatus } from '../models';
 export class TaskService {
   private tasksSubject = new BehaviorSubject<ITask[]>([]);
   public tasks$ = this.tasksSubject.asObservable();
-  private useSQLite = false; // Will be set after DB initialization
-  private useMockBackend = true; // Fallback to mock
+  private readonly TASKS_STORAGE_KEY = 'user_tasks'; // localStorage key
 
   constructor(
-    private apiService: ApiService,
-    private sqliteTask: SQLiteTaskService,
     private authService: AuthService
   ) {
     console.log('[TaskService] Initialized');
     this.initializeTaskService();
+    this.loadTasksFromStorage(); // Carrega tarefas do localStorage
+
+    // Recarrega tarefas quando o usuário faz login/logout
+    this.authService.currentUser$.subscribe(user => {
+      if (user) {
+        console.log('[TaskService] User logged in, reloading tasks...');
+        this.refreshUserTasks();
+      } else {
+        console.log('[TaskService] User logged out, clearing tasks...');
+        this.tasksSubject.next([]);
+      }
+    });
   }
 
   /**
-   * Initialize task service and check SQLite availability
+   * Initialize task service - USA LOCALSTORAGE EM TODAS AS PLATAFORMAS
    */
   private async initializeTaskService(): Promise<void> {
-    try {
-      console.log('[TaskService] Waiting for database initialization...');
-      await this.authService.waitForInit();
-      console.log('[TaskService] Database initialization complete');
+    const platform = (window as any).Capacitor?.getPlatform() || 'web';
 
-      // Assume SQLite está disponível após a inicialização
-      this.useSQLite = true;
-      this.useMockBackend = false;
-      console.log('[TaskService] ✅ SQLite initialized, will use SQLite for tasks');
-    } catch (error) {
-      console.error('[TaskService] ❌ SQLite initialization failed, using mock backend:', error);
-      this.useSQLite = false;
-      this.useMockBackend = true;
+    // FORÇAR USO DE LOCALSTORAGE EM TODAS AS PLATAFORMAS
+    // Isso garante que as tarefas sejam salvas de forma confiável
+    console.log('[TaskService] Platform detected:', platform);
+    console.log('[TaskService] ✅ Using localStorage for ALL platforms (reliable persistence)');
+
+    // Ainda espera a inicialização do auth service
+    if (platform !== 'web') {
+      try {
+        console.log('[TaskService] Waiting for auth initialization...');
+        await this.authService.waitForInit();
+        console.log('[TaskService] Auth initialization complete');
+      } catch (error) {
+        console.warn('[TaskService] Auth initialization warning:', error);
+      }
     }
   }
 
@@ -49,6 +59,57 @@ export class TaskService {
   private async ensureInitialized(): Promise<void> {
     // Wait for auth service initialization
     await this.authService.waitForInit();
+  }
+
+  /**
+   * Recarrega tarefas do usuário atual (chamar após login)
+   */
+  public refreshUserTasks(): void {
+    console.log('[TaskService] Refreshing tasks for current user...');
+    this.loadTasksFromStorage();
+  }
+
+  /**
+   * Carrega tarefas do localStorage (apenas do usuário atual)
+   */
+  private loadTasksFromStorage(): void {
+    try {
+      const userId = this.authService.currentUserValue?.id;
+      const storedTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+
+      if (storedTasks) {
+        let tasks = JSON.parse(storedTasks);
+
+        // Filtra apenas tarefas do usuário logado
+        if (userId) {
+          tasks = tasks.filter((task: ITask) => task.userId === userId);
+          console.log(`[TaskService] ✅ Loaded ${tasks.length} tasks for user ${userId}`);
+        } else {
+          tasks = [];
+          console.log('[TaskService] ⚠️ No user logged in, loading empty tasks');
+        }
+
+        this.tasksSubject.next(tasks);
+      } else {
+        console.log('[TaskService] No tasks found in localStorage');
+        this.tasksSubject.next([]);
+      }
+    } catch (error) {
+      console.error('[TaskService] Error loading tasks from localStorage:', error);
+      this.tasksSubject.next([]);
+    }
+  }
+
+  /**
+   * Salva tarefas no localStorage
+   */
+  private saveTasksToStorage(tasks: ITask[]): void {
+    try {
+      localStorage.setItem(this.TASKS_STORAGE_KEY, JSON.stringify(tasks));
+      console.log(`[TaskService] ✅ Saved ${tasks.length} tasks to localStorage`);
+    } catch (error) {
+      console.error('[TaskService] Error saving tasks to localStorage:', error);
+    }
   }
 
   /**
@@ -69,23 +130,19 @@ export class TaskService {
         return [];
       }
 
-      console.log('[TaskService] useSQLite:', this.useSQLite, 'useMockBackend:', this.useMockBackend);
+      console.log('[TaskService] Using localStorage for tasks');
 
-      let tasks: ITask[];
+      // Carrega do localStorage
+      const storedTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+      let tasks: ITask[] = [];
 
-      if (this.useSQLite) {
-        console.log('[TaskService] Fetching tasks from SQLite...');
-        tasks = await this.sqliteTask.getTasks(userId);
-        console.log('[TaskService] ✅ Got', tasks.length, 'tasks from SQLite');
-      } else if (this.useMockBackend) {
-        console.log('[TaskService] Fetching tasks from Mock Backend...');
-        tasks = this.tasksSubject.value; // Return current tasks from memory
-        console.log('[TaskService] ✅ Got', tasks.length, 'tasks from Mock');
-      } else {
-        console.log('[TaskService] Fetching tasks from API...');
-        tasks = await lastValueFrom(this.apiService.get<ITask[]>('tasks'));
-        console.log('[TaskService] ✅ Got', tasks.length, 'tasks from API');
+      if (storedTasks) {
+        tasks = JSON.parse(storedTasks);
       }
+
+      // Filtra apenas as tarefas do usuário atual
+      tasks = tasks.filter(task => task.userId === userId);
+      console.log('[TaskService] ✅ Got', tasks.length, 'tasks from localStorage');
 
       this.tasksSubject.next(tasks);
       console.log('[TaskService] Tasks updated in subject. Total:', tasks.length);
@@ -102,13 +159,12 @@ export class TaskService {
    */
   async getTaskById(id: string): Promise<ITask | null> {
     try {
-      if (this.useSQLite) {
-        return await this.sqliteTask.getTaskById(id);
-      } else {
-        return await lastValueFrom(
-          this.apiService.get<ITask>(`tasks/${id}`)
-        );
+      const allStoredTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+      if (allStoredTasks) {
+        const tasks: ITask[] = JSON.parse(allStoredTasks);
+        return tasks.find(t => t.id === id) || null;
       }
+      return null;
     } catch (error) {
       console.error('Error fetching task:', error);
       return null;
@@ -128,10 +184,6 @@ export class TaskService {
       await this.ensureInitialized();
       console.log('[TaskService] Initialization complete');
 
-      console.log('[TaskService] Current state:');
-      console.log('[TaskService] - useSQLite:', this.useSQLite);
-      console.log('[TaskService] - useMockBackend:', this.useMockBackend);
-
       const userId = this.authService.currentUserValue?.id;
       console.log('[TaskService] - userId:', userId);
 
@@ -140,39 +192,26 @@ export class TaskService {
         throw new Error('Usuário não autenticado');
       }
 
-      let newTask: ITask;
-
-      if (this.useSQLite) {
-        console.log('[TaskService] ➡️  Creating task in SQLite...');
-        try {
-          newTask = await this.sqliteTask.createTask(taskData, userId);
-          console.log('[TaskService] ✅ Task created in SQLite successfully!');
-          console.log('[TaskService] Task ID:', newTask.id);
-        } catch (sqliteError) {
-          console.error('[TaskService] ❌ SQLite creation failed:', sqliteError);
-          console.log('[TaskService] Falling back to Mock Backend...');
-          this.useSQLite = false;
-          this.useMockBackend = true;
-          newTask = this.createMockTask(taskData, userId);
-        }
-      } else if (this.useMockBackend) {
-        console.log('[TaskService] ➡️  Creating task in Mock Backend...');
-        newTask = this.createMockTask(taskData, userId);
-        console.log('[TaskService] ✅ Task created in Mock successfully!');
-        console.log('[TaskService] Task ID:', newTask.id);
-      } else {
-        console.log('[TaskService] ➡️  Creating task via Real API...');
-        newTask = await lastValueFrom(
-          this.apiService.post<ITask>('tasks', taskData)
-        );
-        console.log('[TaskService] ✅ Task created via API successfully!');
-        console.log('[TaskService] Task ID:', newTask.id);
-      }
+      console.log('[TaskService] ➡️  Creating task in localStorage...');
+      const newTask = this.createMockTask(taskData, userId);
+      console.log('[TaskService] ✅ Task created successfully!');
+      console.log('[TaskService] Task ID:', newTask.id);
 
       // Update local tasks list
       const currentTasks = this.tasksSubject.value;
       const updatedTasks = [...currentTasks, newTask];
       this.tasksSubject.next(updatedTasks);
+
+      // Pega todas as tarefas do localStorage (de todos os usuários)
+      const allStoredTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+      let allTasks: ITask[] = allStoredTasks ? JSON.parse(allStoredTasks) : [];
+
+      // Adiciona a nova tarefa
+      allTasks.push(newTask);
+
+      // Salva de volta
+      this.saveTasksToStorage(allTasks);
+
       console.log('[TaskService] Task list updated. Total tasks:', updatedTasks.length);
       console.log('[TaskService] ========== CREATE TASK END ==========');
 
@@ -187,12 +226,12 @@ export class TaskService {
   }
 
   /**
-   * Create a mock task (fallback when SQLite fails)
+   * Create a mock task (localStorage version)
    */
   private createMockTask(taskData: ICreateTaskDto, userId: string): ITask {
     const now = new Date();
     return {
-      id: 'mock-task-' + Date.now(),
+      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substring(2, 11),
       titulo: taskData.titulo,
       descricao: taskData.descricao || '',
       status: TaskStatus.TODO,
@@ -214,21 +253,25 @@ export class TaskService {
   async updateTask(id: string, updates: IUpdateTaskDto): Promise<ITask> {
     try {
       console.log('[TaskService] Updating task:', id, updates);
-      let updatedTask: ITask;
 
-      if (this.useSQLite) {
-        updatedTask = await this.sqliteTask.updateTask(id, updates);
-      } else {
-        updatedTask = await lastValueFrom(
-          this.apiService.patch<ITask>(`tasks/${id}`, updates)
-        );
+      // Atualiza no localStorage
+      const allStoredTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+      let allTasks: ITask[] = allStoredTasks ? JSON.parse(allStoredTasks) : [];
+
+      const index = allTasks.findIndex(t => t.id === id);
+      if (index === -1) {
+        throw new Error('Task not found');
       }
+
+      const updatedTask = { ...allTasks[index], ...updates, dataAtualizacao: new Date() };
+      allTasks[index] = updatedTask;
+      this.saveTasksToStorage(allTasks);
 
       // Update local tasks list
       const currentTasks = this.tasksSubject.value;
-      const index = currentTasks.findIndex(t => t.id === id);
-      if (index !== -1) {
-        currentTasks[index] = updatedTask;
+      const currentIndex = currentTasks.findIndex(t => t.id === id);
+      if (currentIndex !== -1) {
+        currentTasks[currentIndex] = updatedTask;
         this.tasksSubject.next([...currentTasks]);
       }
 
@@ -247,17 +290,18 @@ export class TaskService {
     try {
       console.log('[TaskService] Deleting task:', id);
 
-      if (this.useSQLite) {
-        await this.sqliteTask.deleteTask(id);
-      } else {
-        await lastValueFrom(
-          this.apiService.delete(`tasks/${id}`)
-        );
-      }
+      // Remove do localStorage
+      const allStoredTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+      let allTasks: ITask[] = allStoredTasks ? JSON.parse(allStoredTasks) : [];
+
+      allTasks = allTasks.filter(t => t.id !== id);
+      this.saveTasksToStorage(allTasks);
 
       // Update local tasks list
       const currentTasks = this.tasksSubject.value;
       this.tasksSubject.next(currentTasks.filter(t => t.id !== id));
+
+      console.log('[TaskService] ✅ Task deleted successfully');
     } catch (error) {
       console.error('[TaskService] Error deleting task:', error);
       throw error;
@@ -269,12 +313,15 @@ export class TaskService {
    */
   async getTasksByProject(projectId: string): Promise<ITask[]> {
     try {
-      return await lastValueFrom(
-        this.apiService.get<ITask[]>(`tasks/project/${projectId}`)
-      );
+      const allStoredTasks = localStorage.getItem(this.TASKS_STORAGE_KEY);
+      if (allStoredTasks) {
+        const tasks: ITask[] = JSON.parse(allStoredTasks);
+        return tasks.filter(t => t.projectId === projectId);
+      }
+      return [];
     } catch (error) {
       console.error('Error fetching project tasks:', error);
-      throw error;
+      return [];
     }
   }
 

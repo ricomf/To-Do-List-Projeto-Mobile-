@@ -43,6 +43,21 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/task-form/task-form.page').then(m => m.TaskFormPage)
   },
   {
+    path: 'help',
+    canActivate: [authGuard],
+    loadComponent: () => import('./pages/help/help.page').then(m => m.HelpPage)
+  },
+  {
+    path: 'privacy',
+    canActivate: [authGuard],
+    loadComponent: () => import('./pages/privacy/privacy.page').then(m => m.PrivacyPage)
+  },
+  {
+    path: 'terms',
+    canActivate: [authGuard],
+    loadComponent: () => import('./pages/terms/terms.page').then(m => m.TermsPage)
+  },
+  {
     path: '**',
     redirectTo: '/auth/login'
   }

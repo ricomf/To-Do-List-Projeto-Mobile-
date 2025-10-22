@@ -6,9 +6,8 @@ import { RouteReuseStrategy } from '@angular/router';
 import { IonicRouteStrategy, provideIonicAngular } from '@ionic/angular/standalone';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Capacitor } from '@capacitor/core';
-import { SQLiteConnection, CapacitorSQLite } from '@capacitor-community/sqlite';
 
-// Importação crucial para o Jeep-SQLite
+// Importação crucial para o Jeep-SQLite (apenas para plataformas nativas)
 import { defineCustomElements as jeepSqlite } from 'jeep-sqlite/loader';
 
 import { AppComponent } from './app/app.component';
@@ -24,34 +23,20 @@ import { errorInterceptor } from './app/interceptors/error.interceptor';
  * Prepara o WebStore se a plataforma for 'web'.
  */
 async function initializeApp() {
-  
-  if (Capacitor.getPlatform() === 'web') {
-    // 1. Regista o componente customizado jeep-sqlite
-    jeepSqlite(window);
+  const platform = Capacitor.getPlatform();
+  console.log('[Main] 🚀 Starting app initialization on platform:', platform);
 
-    // Adiciona um pequeno delay para a conclusão do registo do Stencil.
-    await new Promise(resolve => setTimeout(resolve, 50)); 
-
-    try {
-      console.log('[Main] Initializing WebStore...');
-      const sqlite = new SQLiteConnection(CapacitorSQLite);
-      // 2. Inicializa o armazenamento web
-      await sqlite.initWebStore(); 
-      console.log('[Main] WebStore initialized!');
-      
-      // ✅ SUCESSO: Marca a variável global
-      (window as any).isSQLiteInitialized = true;
-
-    } catch (err) {
-      console.error('[Main] ❌ SQLite Web initialization error:', err);
-      // Em caso de falha, forçamos o Angular a não tentar usar o elemento jeep-sqlite
-      (window as any).isSQLiteInitialized = false; 
-      throw err;
-    }
+  if (platform === 'web') {
+    console.log('[Main] 📦 Web platform - SQLite disabled, using Mock Backend');
+    console.log('[Main] 💾 Data will be stored in localStorage');
   } else {
-    // Para plataformas nativas, consideramos pronto.
-    (window as any).isSQLiteInitialized = true;
+    // Para plataformas nativas, registra jeep-sqlite
+    console.log('[Main] 📱 Native platform - Registering jeep-sqlite...');
+    jeepSqlite(window);
+    console.log('[Main] ✅ jeep-sqlite registered for native platform');
   }
+
+  console.log('[Main] 🎉 Main initialization complete');
 }
 
 // Inicialização e Bootstrap Angular

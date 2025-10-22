@@ -74,6 +74,11 @@ export class SQLiteAuthService {
         [userId, token, refreshToken, expiresAt]
       );
 
+      // FORÇA SALVAMENTO no IndexedDB
+      console.log('[SQLiteAuth] Forcing database save after registration...');
+      await this.db.forceSave();
+      console.log('[SQLiteAuth] ✅ Database saved successfully');
+
       // Fetch created user
       const user = await this.getUserById(userId);
 

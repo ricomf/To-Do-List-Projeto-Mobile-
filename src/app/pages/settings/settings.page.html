@@ -55,7 +55,7 @@
       <ion-label>Aparência</ion-label>
     </ion-list-header>
 
-    <ion-item>
+    <ion-item button (click)="changeTheme()">
       <ion-icon name="moon" slot="start"></ion-icon>
       <ion-label>
         <h2>Tema</h2>
@@ -86,7 +86,7 @@
       <ion-icon name="chevron-forward" slot="end"></ion-icon>
     </ion-item>
 
-    <ion-item button>
+    <ion-item button (click)="navigateToSecurity()">
       <ion-icon name="shield" slot="start"></ion-icon>
       <ion-label>Segurança</ion-label>
       <ion-icon name="chevron-forward" slot="end"></ion-icon>
@@ -117,47 +117,6 @@
       <ion-icon name="chevron-forward" slot="end"></ion-icon>
     </ion-item>
   </ion-list>
-
-  <!-- Database Debug Section
-  <ion-list>
-    <ion-list-header>
-      <ion-label>Banco de Dados</ion-label>
-    </ion-list-header>
-
-    <ion-item>
-      <ion-icon name="server" slot="start"></ion-icon>
-      <ion-label>
-        <h2>Localização</h2>
-        <p>{{ dbPath || 'Carregando...' }}</p>
-      </ion-label>
-    </ion-item>
-
-    <ion-item>
-      <ion-icon name="checkbox" slot="start"></ion-icon>
-      <ion-label>
-        <h2>Status</h2>
-        <p>{{ dbExists ? 'Arquivo existe' : 'Não encontrado' }}</p>
-      </ion-label>
-    </ion-item>
-
-    <ion-item button (click)="debugDatabase()">
-      <ion-icon name="bug" slot="start"></ion-icon>
-      <ion-label>Ver logs do banco de dados</ion-label>
-      <ion-icon name="chevron-forward" slot="end"></ion-icon>
-    </ion-item>
-
-    <ion-item button (click)="exportDatabase()">
-      <ion-icon name="download" slot="start"></ion-icon>
-      <ion-label>Exportar banco de dados</ion-label>
-      <ion-icon name="chevron-forward" slot="end"></ion-icon>
-    </ion-item>
-
-    <ion-item button (click)="resetDatabase()" color="warning">
-      <ion-icon name="trash" slot="start"></ion-icon>
-      <ion-label>Resetar banco de dados</ion-label>
-      <ion-icon name="chevron-forward" slot="end"></ion-icon>
-    </ion-item>
-  </ion-list> -->
 
   <!-- About Section -->
   <ion-list>

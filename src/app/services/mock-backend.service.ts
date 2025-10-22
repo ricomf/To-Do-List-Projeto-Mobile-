@@ -28,26 +28,32 @@ export class MockBackendService {
    * Inicializa dados mock no localStorage
    */
   private initializeMockData() {
-    
-    // 🚨 CORREÇÃO FINAL: SEMPRE REINICIA OS USUÁRIOS NO AMBIENTE MOCK
-    const defaultUser = {
-      id: 'mock-user-123',
-      nome: 'Mock Test User',
-      email: 'test@mock.com',
-      password: 'password', // Senha de teste: "password"
-      avatarUrl: null,
-      roles: [UserRole.USER],
-      dataCriacao: new Date(),
-      dataAtualizacao: new Date(),
-      ativo: true
-    };
-    
-    // Sobrescreve a lista de usuários com APENAS o usuário padrão
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify([defaultUser]));
-    console.warn('[MockBackend] 🛑 Lista de usuários MOCK REINICIADA. Use test@mock.com / password');
+    // ✅ CORREÇÃO: Só inicializa se NÃO houver dados salvos
+    // Isso permite persistência dos dados cadastrados
+
+    if (!localStorage.getItem(this.STORAGE_KEY)) {
+      const defaultUser = {
+        id: 'mock-user-123',
+        nome: 'Mock Test User',
+        email: 'test@mock.com',
+        password: 'password', // Senha de teste: "password"
+        avatarUrl: null,
+        roles: [UserRole.USER],
+        dataCriacao: new Date(),
+        dataAtualizacao: new Date(),
+        ativo: true
+      };
+
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify([defaultUser]));
+      console.log('[MockBackend] ✅ Mock data initialized with default user: test@mock.com / password');
+    } else {
+      const users = this.getUsers();
+      console.log(`[MockBackend] ✅ Found ${users.length} existing user(s) in localStorage`);
+    }
 
     if (!localStorage.getItem(this.TASKS_KEY)) {
       localStorage.setItem(this.TASKS_KEY, JSON.stringify(this.getDefaultTasks()));
+      console.log('[MockBackend] ✅ Mock tasks initialized');
     }
   }
 

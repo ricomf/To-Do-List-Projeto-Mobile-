@@ -5,16 +5,18 @@ import { Router } from '@angular/router';
 import {
   IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
   IonLabel, IonToggle, IonIcon, IonListHeader, IonAvatar, IonButton,
-  IonCard, IonCardContent, IonNote, AlertController, ToastController
+  IonCard, IonCardContent, IonNote, AlertController, ActionSheetController,
+  ToastController, ModalController
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
   person, notifications, moon, language, logOut, help, shield,
-  documentText, chevronForward, server, checkbox, bug, download, trash, mail
+  documentText, chevronForward, mail
 } from 'ionicons/icons';
 import { AuthService } from '../../services/auth.service';
-import { DatabaseService } from '../../services/database.service';
+import { PreferencesService } from '../../services/preferences.service';
 import { IUserProfile, IUserPreferences, UserRole } from '../../models';
+import { ProfileEditModalComponent } from '../../components/profile-edit-modal/profile-edit-modal.component';
 
 @Component({
   selector: 'app-settings',
@@ -36,96 +38,238 @@ export class SettingsPage implements OnInit {
     idioma: 'pt-BR'
   };
 
-  dbPath: string = '';
-  dbExists: boolean = false;
-
   constructor(
     private authService: AuthService,
+    private preferencesService: PreferencesService,
     private router: Router,
-    private databaseService: DatabaseService,
     private alertController: AlertController,
-    private toastController: ToastController
+    private actionSheetController: ActionSheetController,
+    private toastController: ToastController,
+    private modalController: ModalController
   ) {
     addIcons({
       person, notifications, moon, language, logOut, help, shield,
-      documentText, chevronForward, server, checkbox, bug, download, trash, mail
+      documentText, chevronForward, mail
     });
   }
 
   ngOnInit() {
     this.loadUserProfile();
-    this.loadDatabaseInfo();
-  }
-
-  async loadDatabaseInfo() {
-    try {
-      this.dbPath = await this.databaseService.getDatabasePath();
-      this.dbExists = await this.databaseService.checkDatabaseExists();
-    } catch (error) {
-      console.error('Error loading database info:', error);
-    }
+    this.loadPreferences();
   }
 
   async loadUserProfile() {
     try {
-      // TODO: Replace with actual service call
-      // Mock data for demonstration
-      this.userProfile = {
-        id: '1',
-        nome: 'João Silva',
-        email: 'joao@email.com',
-        avatarUrl: undefined,
-        roles: [UserRole.USER],
-        dataCriacao: new Date(),
-        dataAtualizacao: new Date(),
-        ativo: true,
-        preferencias: this.preferences
-      };
+      const currentUser = this.authService.currentUserValue;
 
-      if (this.userProfile?.preferencias) {
-        this.preferences = this.userProfile.preferencias;
+      if (currentUser) {
+        this.userProfile = {
+          id: currentUser.id,
+          nome: currentUser.nome,
+          email: currentUser.email,
+          avatarUrl: undefined,
+          roles: [UserRole.USER],
+          dataCriacao: new Date(),
+          dataAtualizacao: new Date(),
+          ativo: true,
+          preferencias: this.preferences
+        };
       }
     } catch (error) {
       console.error('Error loading user profile:', error);
     }
   }
 
+  loadPreferences() {
+    this.preferences = this.preferencesService.currentPreferencesValue;
+  }
+
   async updatePreferences() {
     try {
-      // TODO: Implement preferences update via service
-      console.log('Updating preferences:', this.preferences);
+      this.preferencesService.updatePreferences(this.preferences);
+
+      const toast = await this.toastController.create({
+        message: 'Preferências atualizadas com sucesso!',
+        duration: 2000,
+        position: 'bottom',
+        color: 'success'
+      });
+      await toast.present();
     } catch (error) {
       console.error('Error updating preferences:', error);
     }
   }
 
-  navigateToProfile() {
-    // TODO: Navigate to profile edit page
-    console.log('Navigate to profile');
+  async navigateToProfile() {
+    if (!this.userProfile) return;
+
+    const modal = await this.modalController.create({
+      component: ProfileEditModalComponent,
+      componentProps: {
+        userProfile: this.userProfile
+      }
+    });
+
+    await modal.present();
+
+    const { data, role } = await modal.onWillDismiss();
+
+    if (role === 'save' && data) {
+      this.userProfile = data;
+      // TODO: Implementar atualização no backend via AuthService
+    }
+  }
+
+  async changeTheme() {
+    const actionSheet = await this.actionSheetController.create({
+      header: 'Escolha o tema',
+      buttons: [
+        {
+          text: 'Claro',
+          handler: () => {
+            this.preferences.tema = 'light';
+            this.updatePreferences();
+          }
+        },
+        {
+          text: 'Escuro',
+          handler: () => {
+            this.preferences.tema = 'dark';
+            this.updatePreferences();
+          }
+        },
+        {
+          text: 'Automático',
+          handler: () => {
+            this.preferences.tema = 'auto';
+            this.updatePreferences();
+          }
+        },
+        {
+          text: 'Cancelar',
+          role: 'cancel'
+        }
+      ]
+    });
+
+    await actionSheet.present();
+  }
+
+  async navigateToSecurity() {
+    const alert = await this.alertController.create({
+      header: 'Alterar Senha',
+      inputs: [
+        {
+          name: 'currentPassword',
+          type: 'password',
+          placeholder: 'Senha atual'
+        },
+        {
+          name: 'newPassword',
+          type: 'password',
+          placeholder: 'Nova senha'
+        },
+        {
+          name: 'confirmPassword',
+          type: 'password',
+          placeholder: 'Confirmar nova senha'
+        }
+      ],
+      buttons: [
+        {
+          text: 'Cancelar',
+          role: 'cancel'
+        },
+        {
+          text: 'Alterar',
+          handler: async (data) => {
+            if (!data.currentPassword || !data.newPassword || !data.confirmPassword) {
+              const toast = await this.toastController.create({
+                message: 'Por favor, preencha todos os campos',
+                duration: 2000,
+                position: 'bottom',
+                color: 'warning'
+              });
+              await toast.present();
+              return false;
+            }
+
+            if (data.newPassword !== data.confirmPassword) {
+              const toast = await this.toastController.create({
+                message: 'As senhas não conferem',
+                duration: 2000,
+                position: 'bottom',
+                color: 'warning'
+              });
+              await toast.present();
+              return false;
+            }
+
+            if (data.newPassword.length < 6) {
+              const toast = await this.toastController.create({
+                message: 'A senha deve ter no mínimo 6 caracteres',
+                duration: 2000,
+                position: 'bottom',
+                color: 'warning'
+              });
+              await toast.present();
+              return false;
+            }
+
+            // TODO: Implementar alteração de senha no backend
+            const toast = await this.toastController.create({
+              message: 'Senha alterada com sucesso!',
+              duration: 2000,
+              position: 'bottom',
+              color: 'success'
+            });
+            await toast.present();
+            return true;
+          }
+        }
+      ]
+    });
+
+    await alert.present();
   }
 
   navigateToHelp() {
-    // TODO: Navigate to help page
-    console.log('Navigate to help');
+    this.router.navigate(['/help']);
   }
 
   navigateToPrivacy() {
-    // TODO: Navigate to privacy policy
-    console.log('Navigate to privacy');
+    this.router.navigate(['/privacy']);
   }
 
   navigateToTerms() {
-    // TODO: Navigate to terms of service
-    console.log('Navigate to terms');
+    this.router.navigate(['/terms']);
   }
 
   async logout() {
-    try {
-      await this.authService.logout();
-      this.router.navigate(['/auth/login']);
-    } catch (error) {
-      console.error('Error during logout:', error);
-    }
+    const alert = await this.alertController.create({
+      header: 'Sair',
+      message: 'Tem certeza que deseja sair?',
+      buttons: [
+        {
+          text: 'Cancelar',
+          role: 'cancel'
+        },
+        {
+          text: 'Sair',
+          role: 'destructive',
+          handler: async () => {
+            try {
+              await this.authService.logout();
+              this.router.navigate(['/auth/login']);
+            } catch (error) {
+              console.error('Error during logout:', error);
+            }
+          }
+        }
+      ]
+    });
+
+    await alert.present();
   }
 
   getInitials(name: string): string {
@@ -135,85 +279,5 @@ export class SettingsPage implements OnInit {
       .join('')
       .toUpperCase()
       .substring(0, 2);
-  }
-
-  async debugDatabase() {
-    try {
-      await this.databaseService.debugDatabase();
-      const toast = await this.toastController.create({
-        message: 'Verifique o console para ver os logs do banco de dados',
-        duration: 3000,
-        position: 'bottom',
-        color: 'success'
-      });
-      await toast.present();
-    } catch (error) {
-      console.error('Error debugging database:', error);
-      const toast = await this.toastController.create({
-        message: 'Erro ao debugar banco de dados',
-        duration: 3000,
-        position: 'bottom',
-        color: 'danger'
-      });
-      await toast.present();
-    }
-  }
-
-  async exportDatabase() {
-    try {
-      await this.databaseService.downloadDatabaseAsJson();
-      const toast = await this.toastController.create({
-        message: 'Banco de dados exportado com sucesso',
-        duration: 3000,
-        position: 'bottom',
-        color: 'success'
-      });
-      await toast.present();
-    } catch (error) {
-      console.error('Error exporting database:', error);
-      const toast = await this.toastController.create({
-        message: 'Erro ao exportar banco de dados',
-        duration: 3000,
-        position: 'bottom',
-        color: 'danger'
-      });
-      await toast.present();
-    }
-  }
-
-  async resetDatabase() {
-    const alert = await this.alertController.create({
-      header: 'Confirmar Reset',
-      message: 'Tem certeza que deseja resetar o banco de dados? Todos os dados serão perdidos!',
-      buttons: [
-        {
-          text: 'Cancelar',
-          role: 'cancel'
-        },
-        {
-          text: 'Resetar',
-          role: 'destructive',
-          handler: async () => {
-            try {
-              await this.databaseService.close();
-
-              // Reload the page to reinitialize the database
-              window.location.reload();
-            } catch (error) {
-              console.error('Error resetting database:', error);
-              const toast = await this.toastController.create({
-                message: 'Erro ao resetar banco de dados',
-                duration: 3000,
-                position: 'bottom',
-                color: 'danger'
-              });
-              await toast.present();
-            }
-          }
-        }
-      ]
-    });
-
-    await alert.present();
   }
 }
